@@ -1,14 +1,22 @@
 use chrono::{DateTime, Utc};
 use crossterm::{
-    event::{self, Event as CEvent},
-    terminal::enable_raw_mode,
+    event::{self, Event as CEvent, KeyCode},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use std::{io, time::Instant};
 use std::{sync::mpsc, thread};
 use thiserror::Error;
-use tui::{self, Terminal, backend::CrosstermBackend, layout::{Alignment, Constraint, Direction, Layout}, style::{Color, Style}, widgets::{Block, BorderType, Borders, Paragraph}};
+use tui::{
+    self,
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, BorderType, Borders, Paragraph, Tabs},
+    Terminal,
+};
 
 const DB_PATH: &str = "./data/db.json";
 
@@ -80,6 +88,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
+    // Menu titles
+    let menu_titles = vec!["Home", "Pets", "Add", "Delete", "Quit"];
+    let mut active_menu_item = MenuItem::Home;
+
     // Rendering widgets in TUI
     loop {
         terminal.draw(|rect| {
@@ -106,8 +118,79 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .title("Copyright")
                         .border_type(BorderType::Plain),
                 );
-        });
-       
+
+            let menu: Vec<Spans> = menu_titles
+                .iter()
+                .map(|t| {
+                    let (first, rest) = t.split_at(1);
+                    Spans::from(vec![
+                        Span::styled(
+                            first,
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::UNDERLINED),
+                        ),
+                        Span::styled(rest, Style::default().fg(Color::White)),
+                    ])
+                })
+                .collect();
+            let tabs = Tabs::new(menu)
+                .select(active_menu_item.into())
+                .block(Block::default().title("Menu").borders(Borders::ALL))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().fg(Color::Yellow))
+                .divider(Span::raw("|"));
+            rect.render_widget(tabs, chunks[0]);
+
+            match active_menu_item {
+                MenuItem::Home => rect.render_widget(render_home(), chunks[1]),
+                MenuItem::Pets => {
+                    let pets_chunk = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints(
+                            [Constraint::Percentage(20), Constraint::Percentage(80)].as_ref(),
+                        )
+                        .split(chunks[1]);
+                    let (left, right) = render_pets(&pet_list_state);
+                    rect.render_stateful_widget(left, pets_chunk[0], &mut pet_list_state);
+                    rect.render_widget(right, pets_chunk[1]);
+                }
+            }
+        })?;
+
+        match rx.recv()? {
+            Event::Input(event) => match event.code {
+                KeyCode::Char('q') => {
+                    disable_raw_mode()?;
+                    terminal.show_cursor()?;
+                    break;
+                }
+                KeyCode::Char('h') => active_menu_item = MenuItem::Home,
+                KeyCode::Char('p') => active_menu_item = MenuItem::Pets,
+                _ => {}
+            },
+            Event::Tick => {}
+        }
     }
+
     todo!();
+}
+
+fn render_home<'a>() -> Paragraph<'a> {
+    let home = Paragraph::new(vec![
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Welcome")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("to")]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::styled(
+            "pet-CLI",
+            Style::default().fg(Color::LightBlue),
+        )]),
+        Spans::from(vec![Span::raw("")]),
+        Spans::from(vec![Span::raw("Press 'p' to access pets, 'a' to add random new pets and 'd' to delete the currently selected pet.")]),
+    ]).alignment(Alignment::Center).block(
+        Block::default().borders(Borders::ALL).style(Style::default().fg(Color::White)).title("Home").border_type(BorderType::Plain),
+    );
+    home
 }
