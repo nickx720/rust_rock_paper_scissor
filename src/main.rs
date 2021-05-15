@@ -4,19 +4,11 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use std::{fs, time::Duration};
 use std::{io, time::Instant};
 use std::{sync::mpsc, thread};
 use thiserror::Error;
-use tui::{
-    self,
-    backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Paragraph, Tabs},
-    Terminal,
-};
+use tui::{self, Terminal, backend::CrosstermBackend, layout::{Alignment, Constraint, Direction, Layout}, style::{Color, Modifier, Style}, text::{Span, Spans}, widgets::{Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs}};
 
 const DB_PATH: &str = "./data/db.json";
 
@@ -91,6 +83,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Menu titles
     let menu_titles = vec!["Home", "Pets", "Add", "Delete", "Quit"];
     let mut active_menu_item = MenuItem::Home;
+
+    let mut pet_list_state = ListState::default();
+    pet_list_state.select(Some(0));
 
     // Rendering widgets in TUI
     loop {
@@ -174,6 +169,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     todo!();
+}
+
+fn read_db() -> Result<Vec<Pet>, Error> {
+    let db_content = fs::read_to_string(DB_PATH)?;
+    let parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
+    Ok(parsed)
+}
+
+fn render_pets<'a>(pet_list_state: &ListState) -> (List<'a>, Table<'a>) {
+    let pets = Block::default()
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::White))
+        .title("Pets")
+        .border_type(BorderType::Plain);
+    let pet_list = read_db().expect("can fetch pet list");
+    let items: Vec<_> = pet_list
+        .iter()
+        .map(|pet| {
+            ListItem::new(Spans::from(vec![Span::styled(
+                pet.name.clone(),
+                Style::default(),
+            )]))
+        })
+        .collect();
+    let selected_pet = pet_list
+        .get(
+            pet_list_state
+                .selected()
+                .expect("There is always a selected pet"),
+        )
+        .expect("exists")
+        .clone();
+    let list = List::new(items).block(pets).highlight_style(
+        Style::default()
+            .bg(Color::Yellow)
+            .fg(Color::Black)
+            .add_modifier(Modifier::BOLD),
+    );
+    let pet_detail = Table::new(vec![Row::new(vec![
+        Cell::from(Span::raw(selected_pet.id.to_string())),
+        Cell::from(Span::raw(selected_pet.name)),
+        Cell::from(Span::raw(selected_pet.category)),
+        Cell::from(Span::raw(selected_pet.age.to_string())),
+        Cell::from(Span::raw(selected_pet.created_at.to_string())),
+    ])])
+    .header(Row::new(vec![
+        Cell::from(Span::styled(
+            "ID",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Name",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Category",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Cell::from(Span::styled(
+            "Created At",
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+    ]))
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .style(Style::default().fg(Color::White))
+            .title("Detail")
+            .border_type(BorderType::Plain),
+    )
+    .widths(&[
+        Constraint::Percentage(5),
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+        Constraint::Percentage(5),
+        Constraint::Percentage(20),
+    ]);
+    (list, pet_detail)
 }
 
 fn render_home<'a>() -> Paragraph<'a> {
