@@ -3,12 +3,23 @@ use crossterm::{
     event::{self, Event as CEvent, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
+use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use std::{fs, time::Duration};
 use std::{io, time::Instant};
 use std::{sync::mpsc, thread};
 use thiserror::Error;
-use tui::{self, Terminal, backend::CrosstermBackend, layout::{Alignment, Constraint, Direction, Layout}, style::{Color, Modifier, Style}, text::{Span, Spans}, widgets::{Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs}};
+use tui::{
+    self,
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{
+        Block, BorderType, Borders, Cell, List, ListItem, ListState, Paragraph, Row, Table, Tabs,
+    },
+    Terminal,
+};
 
 const DB_PATH: &str = "./data/db.json";
 
@@ -155,6 +166,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match rx.recv()? {
             Event::Input(event) => match event.code {
+                KeyCode::Char('a') => {
+                    add_random_pet_to_db().expect("can add new random pet");
+                }
+                KeyCode::Char('d') => {
+                    remove_pet_at_index(&mut pet_list_state).expect("Can remove pet");
+                }
+                KeyCode::Down => {
+                    if let Some(selected) = pet_list_state.selected() {
+                        let amount_pets = read_db().expect("can fetch pet list").len();
+                        if selected >= amount_pets - 1 {
+                            pet_list_state.select(Some(0));
+                        } else {
+                            pet_list_state.select(Some(selected + 1));
+                        }
+                    }
+                }
+                KeyCode::Up => {
+                    if let Some(selected) = pet_list_state.selected() {
+                        let amount_pets = read_db().expect("can fetch pet list").len();
+                        if selected > 0 {
+                            pet_list_state.select(Some(selected - 1));
+                        } else {
+                            pet_list_state.select(Some(amount_pets - 1));
+                        }
+                    }
+                }
                 KeyCode::Char('q') => {
                     disable_raw_mode()?;
                     terminal.show_cursor()?;
@@ -162,6 +199,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 KeyCode::Char('h') => active_menu_item = MenuItem::Home,
                 KeyCode::Char('p') => active_menu_item = MenuItem::Pets,
+
                 _ => {}
             },
             Event::Tick => {}
@@ -266,4 +304,39 @@ fn render_home<'a>() -> Paragraph<'a> {
         Block::default().borders(Borders::ALL).style(Style::default().fg(Color::White)).title("Home").border_type(BorderType::Plain),
     );
     home
+}
+
+fn add_random_pet_to_db() -> Result<Vec<Pet>, Error> {
+    let mut rng = rand::thread_rng();
+    let db_content = fs::read_to_string(DB_PATH)?;
+    let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
+    let catsdogs = match rng.gen_range(0..1) {
+        0 => "cats",
+        _ => "dogs",
+    };
+    let random_pet = Pet {
+        id: rng.gen_range(0..9999999),
+        name: (&mut rng)
+            .sample_iter(Alphanumeric)
+            .take(10)
+            .map(char::from)
+            .collect(),
+        category: catsdogs.to_owned(),
+        age: rng.gen_range(1..15),
+        created_at: Utc::now(),
+    };
+    parsed.push(random_pet);
+    fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
+    Ok(parsed)
+}
+
+fn remove_pet_at_index(pet_list_state: &mut ListState) -> Result<(), Error> {
+    if let Some(selected) = pet_list_state.selected() {
+        let db_content = fs::read_to_string(DB_PATH)?;
+        let mut parsed: Vec<Pet> = serde_json::from_str(&db_content)?;
+        parsed.remove(selected);
+        fs::write(DB_PATH, &serde_json::to_vec(&parsed)?)?;
+        pet_list_state.select(Some(selected - 1));
+    }
+    Ok(())
 }
