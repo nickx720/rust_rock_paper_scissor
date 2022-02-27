@@ -7,7 +7,10 @@ use std::{io, thread, time::Duration};
 use thiserror::Error;
 use tui::{
     backend::CrosstermBackend,
-    widgets::{Block, Borders},
+    layout::{Alignment, Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Terminal,
 };
 
@@ -29,8 +32,40 @@ fn main() -> Result<(), TerminalError> {
 
     terminal.draw(|f| {
         let size = f.size();
-        let block = Block::default().title("Testing").borders(Borders::ALL);
-        f.render_widget(block, size);
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(2)
+            .constraints(
+                [
+                    Constraint::Length(3),
+                    Constraint::Min(2),
+                    Constraint::Length(3),
+                ]
+                .as_ref(),
+            )
+            .split(size);
+        let copyright = Paragraph::new("pet-CLI 2020 - all rights reserved")
+            .style(Style::default().fg(Color::LightCyan))
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::White))
+                    .title("Copyright")
+                    .border_type(BorderType::Plain),
+            );
+        f.render_widget(copyright, chunks[0]);
+        let para = Paragraph::new("second paragraph")
+            .style(Style::default().fg(Color::LightCyan))
+            .alignment(Alignment::Center)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .style(Style::default().fg(Color::White))
+                    .title("Second para")
+                    .border_type(BorderType::Plain),
+            );
+        f.render_widget(para, chunks[1]);
     })?;
 
     thread::sleep(Duration::from_millis(5000));
